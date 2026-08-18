@@ -413,8 +413,16 @@ export default function App() {
               </nav>
             </div>
             
-            <div className="text-[10px] text-slate-500 pt-8 border-t border-slate-800">
-              Flow Extension &bull; MVP Local
+            <div className="text-[10px] text-slate-500 pt-8 border-t border-slate-800 flex items-center justify-between">
+              <span>Flow Extension &bull; v1.0.0</span>
+              <a
+                href="https://github.com/gui-bus"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-slate-300 transition-colors"
+              >
+                github.com/gui-bus
+              </a>
             </div>
           </div>
 
