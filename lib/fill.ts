@@ -94,14 +94,18 @@ export function fillCheckbox(el: HTMLInputElement, checked: boolean): void {
 }
 
 function normalizeTargetForField(fieldType: string, value: string): string[] {
-  const val = value.toLowerCase().trim();
-  const cleanVal = val.replace(/\s*\(.*?\)/g, '').trim();
-  const candidates = new Set<string>([cleanVal, val]);
+  const val = value.trim();
+  const lowerVal = val.toLowerCase();
+  const cleanVal = lowerVal.replace(/\s*\(.*?\)/g, '').trim();
+  const candidates = new Set<string>([val, lowerVal, cleanVal]);
 
-  if (fieldType === 'countryOrigin') {
-    if (['brasil', 'brazil', 'br'].includes(cleanVal)) {
-      candidates.add('brasil');
+  if (fieldType === 'countryOrigin' || fieldType === 'country') {
+    if (['brasil', 'brazil', 'br', 'brasil (br)'].includes(cleanVal)) {
+      candidates.add('Brasil (BR)');
+      candidates.add('Brasil');
       candidates.add('brasil (br)');
+      candidates.add('brasil');
+      candidates.add('BR');
       candidates.add('br');
     }
   }
@@ -115,22 +119,27 @@ function normalizeTargetForField(fieldType: string, value: string): string[] {
 
   if (fieldType === 'gender') {
     if (['masculino', 'homem', 'homem cis', 'homem cisgênero', 'homem cisgenero', 'male', 'man', 'm'].includes(cleanVal)) {
+      candidates.add('Homem cisgênero');
       candidates.add('homem cisgênero');
       candidates.add('homem cisgenero');
       candidates.add('homem');
       candidates.add('masculino');
     } else if (['feminino', 'mulher', 'mulher cis', 'mulher cisgênero', 'mulher cisgenero', 'female', 'woman', 'f'].includes(cleanVal)) {
+      candidates.add('Mulher cisgênero');
       candidates.add('mulher cisgênero');
       candidates.add('mulher cisgenero');
       candidates.add('mulher');
       candidates.add('feminino');
     } else if (['homem trans', 'homem transgênero', 'homem transgenero', 'trans masculino'].includes(cleanVal)) {
+      candidates.add('Homem transgênero');
       candidates.add('homem transgênero');
       candidates.add('homem transgenero');
     } else if (['mulher trans', 'mulher transgênero', 'mulher transgenero', 'trans feminina'].includes(cleanVal)) {
+      candidates.add('Mulher transgênero');
       candidates.add('mulher transgênero');
       candidates.add('mulher transgenero');
     } else if (['não-binário', 'nao-binario', 'não binário', 'nao binario', 'non-binary'].includes(cleanVal)) {
+      candidates.add('Não-binário');
       candidates.add('não-binário');
       candidates.add('nao-binario');
       candidates.add('não binário');
@@ -139,10 +148,12 @@ function normalizeTargetForField(fieldType: string, value: string): string[] {
 
   if (fieldType === 'isPcdCandidate' || fieldType === 'disability') {
     if (['não', 'nao', 'no', 'não pertenço', 'nao pertenço', 'nao pertenco', 'false', '0', 'sem deficiência'].includes(cleanVal)) {
+      candidates.add('Não');
       candidates.add('não');
       candidates.add('nao');
       candidates.add('sem deficiência');
     } else if (['sim', 'yes', 'true', '1', 'pcd', 'com deficiência'].includes(cleanVal)) {
+      candidates.add('Sim');
       candidates.add('sim');
       candidates.add('com deficiência');
       candidates.add('pcd');
@@ -151,16 +162,57 @@ function normalizeTargetForField(fieldType: string, value: string): string[] {
 
   if (fieldType === 'referredBySomeone') {
     if (['não', 'nao', 'no', 'false', '0'].includes(cleanVal)) {
+      candidates.add('Não');
       candidates.add('não');
       candidates.add('nao');
       candidates.add('false');
     } else if (['sim', 'yes', 'true', '1'].includes(cleanVal)) {
+      candidates.add('Sim');
       candidates.add('sim');
       candidates.add('true');
     }
   }
 
   return Array.from(candidates);
+}
+
+function fillDropdownViaMainWorld(field: DetectedField, finalValue: string, candidateTargets: string[]): Promise<boolean> {
+  return new Promise((resolve) => {
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    let settled = false;
+
+    const timeout = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        window.removeEventListener('__FLOW_FILL_DROPDOWN_REPLY__', onReply);
+        resolve(false);
+      }
+    }, 1200);
+
+    const onReply = (e: any) => {
+      if (e.detail?.requestId === requestId) {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timeout);
+          window.removeEventListener('__FLOW_FILL_DROPDOWN_REPLY__', onReply);
+          resolve(e.detail.success === true);
+        }
+      }
+    };
+
+    window.addEventListener('__FLOW_FILL_DROPDOWN_REPLY__', onReply);
+
+    window.dispatchEvent(new CustomEvent('__FLOW_FILL_DROPDOWN__', {
+      detail: {
+        requestId,
+        fieldType: field.fieldType,
+        finalValue,
+        candidateTargets,
+        selector: field.elementSelector,
+        nameAttr: field.nameAttribute || ''
+      }
+    }));
+  });
 }
 
 function clickElement(el: HTMLElement) {
@@ -246,6 +298,16 @@ export async function fillFieldOnPage(field: DetectedField): Promise<boolean> {
         hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
       }
 
+      const candidateTargets = normalizeTargetForField(field.fieldType, finalValue);
+
+      const mainWorldSuccess = await fillDropdownViaMainWorld(field, finalValue, candidateTargets);
+      if (mainWorldSuccess) {
+        if (field.fieldType === 'countryOrigin') {
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+        return true;
+      }
+
       const selectElem = (reactDropdown.querySelector('.react-dropdown-select') || reactDropdown) as HTMLElement;
       const isExpanded = selectElem.getAttribute('aria-expanded') === 'true';
 
@@ -256,8 +318,6 @@ export async function fillFieldOnPage(field: DetectedField): Promise<boolean> {
         clickElement(handle);
         await new Promise(r => setTimeout(r, 200));
       }
-
-      const candidateTargets = normalizeTargetForField(field.fieldType, finalValue);
 
       const findOptionButton = (): HTMLElement | null => {
         const optionButtons = Array.from(
@@ -270,9 +330,10 @@ export async function fillFieldOnPage(field: DetectedField): Promise<boolean> {
           const text = (btn.textContent || '').toLowerCase().trim();
 
           for (const target of candidateTargets) {
-            if (aria === target || (target.length >= 3 && aria.includes(target)) ||
-                optVal === target ||
-                text === target || (target.length >= 3 && text.includes(target))) {
+            const tLower = target.toLowerCase();
+            if (aria === tLower || (tLower.length >= 3 && aria.includes(tLower)) ||
+                optVal === tLower ||
+                text === tLower || (tLower.length >= 3 && text.includes(tLower))) {
               return btn;
             }
           }
@@ -303,8 +364,8 @@ export async function fillFieldOnPage(field: DetectedField): Promise<boolean> {
           searchInput.dispatchEvent(new Event('change', { bubbles: true }));
           
           const waitStart = Date.now();
-          while (Date.now() - waitStart < 800) {
-            await new Promise(resolve => setTimeout(resolve, 80));
+          while (Date.now() - waitStart < 600) {
+            await new Promise(resolve => setTimeout(resolve, 60));
             buttonToClick = findOptionButton();
             if (buttonToClick) break;
           }
@@ -316,19 +377,9 @@ export async function fillFieldOnPage(field: DetectedField): Promise<boolean> {
         clickElement(buttonToClick);
 
         if (field.fieldType === 'countryOrigin') {
-          await new Promise(resolve => setTimeout(resolve, 400));
-        } else {
-          await new Promise(resolve => setTimeout(resolve, 150));
+          await new Promise(resolve => setTimeout(resolve, 300));
         }
         return true;
-      }
-
-      const searchInput = document.querySelector('[data-component-name="DropdownOptionsSearch"] input, input[placeholder*="Pesquis"]') as HTMLInputElement;
-      if (searchInput) {
-        searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, which: 40, bubbles: true }));
-        searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-        searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-        await new Promise(resolve => setTimeout(resolve, 200));
       }
 
       return true;
