@@ -163,15 +163,65 @@ function normalizeTargetForField(fieldType: string, value: string): string[] {
   return Array.from(candidates);
 }
 
+function triggerReactClick(el: HTMLElement): boolean {
+  const reactKeys = Object.keys(el).filter(key => 
+    key.startsWith('__reactFiber') || 
+    key.startsWith('__reactProps') || 
+    key.startsWith('__reactEventHandlers') ||
+    key.startsWith('__reactInternalInstance')
+  );
+
+  for (const key of reactKeys) {
+    try {
+      const fiber = (el as any)[key];
+      let node = fiber;
+      while (node) {
+        const props = node.memoizedProps || node.pendingProps || node.props;
+        if (props && typeof props.onClick === 'function') {
+          props.onClick({
+            target: el,
+            currentTarget: el,
+            bubbles: true,
+            cancelable: true,
+            preventDefault: () => {},
+            stopPropagation: () => {},
+            nativeEvent: new MouseEvent('click', { bubbles: true })
+          });
+          return true;
+        }
+        node = node.return || node._debugOwner;
+      }
+    } catch (_) {}
+  }
+  return false;
+}
+
 function simulateClick(element: HTMLElement) {
+  const rect = element.getBoundingClientRect();
+  const clientX = rect.left > 0 ? rect.left + rect.width / 2 : 100;
+  const clientY = rect.top > 0 ? rect.top + rect.height / 2 : 100;
+  const mouseOpts: MouseEventInit = {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+    clientX,
+    clientY,
+    screenX: clientX,
+    screenY: clientY,
+    button: 0,
+    buttons: 1
+  };
+
   element.focus();
-  element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true, view: window }));
-  element.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, cancelable: true, view: window }));
-  element.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, view: window }));
-  element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window, detail: 1, button: 0, buttons: 1 }));
-  element.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true, pointerId: 1, pointerType: 'mouse', isPrimary: true, view: window }));
-  element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window, detail: 1, button: 0, buttons: 0 }));
-  element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, detail: 1, button: 0, buttons: 0 }));
+  element.dispatchEvent(new PointerEvent('pointerdown', { ...mouseOpts, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+  element.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
+  element.dispatchEvent(new PointerEvent('pointerup', { ...mouseOpts, buttons: 0 }));
+  element.dispatchEvent(new MouseEvent('mouseup', { ...mouseOpts, buttons: 0 }));
+  element.dispatchEvent(new MouseEvent('click', { ...mouseOpts, buttons: 0 }));
+  element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+  element.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+  
+  triggerReactClick(element);
   element.click();
 }
 
@@ -286,9 +336,12 @@ export async function fillFieldOnPage(field: DetectedField): Promise<boolean> {
           } else {
             searchInput.value = primarySearch;
           }
+          searchInput.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: primarySearch }));
           searchInput.dispatchEvent(new Event('input', { bubbles: true }));
           searchInput.dispatchEvent(new Event('change', { bubbles: true }));
-          searchInput.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'a' }));
+          searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, which: 40, bubbles: true }));
+          searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+          searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', keyCode: 13, which: 13, bubbles: true }));
           
           const waitStart = Date.now();
           while (Date.now() - waitStart < 1000) {
@@ -304,7 +357,7 @@ export async function fillFieldOnPage(field: DetectedField): Promise<boolean> {
         simulateClick(buttonToClick);
 
         if (field.fieldType === 'countryOrigin') {
-          await new Promise(resolve => setTimeout(resolve, 700));
+          await new Promise(resolve => setTimeout(resolve, 800));
         } else {
           await new Promise(resolve => setTimeout(resolve, 200));
         }
