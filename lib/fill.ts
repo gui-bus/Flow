@@ -163,76 +163,9 @@ function normalizeTargetForField(fieldType: string, value: string): string[] {
   return Array.from(candidates);
 }
 
-function runInPageContext<T = any>(fnBody: string): Promise<T> {
-  return new Promise((resolve) => {
-    const id = `flow_ctx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    
-    const listener = (event: Event) => {
-      const customEvent = event as CustomEvent;
-      if (customEvent.detail?.id === id) {
-        window.removeEventListener('__flow_bridge_msg', listener);
-        script.remove();
-        resolve(customEvent.detail.result);
-      }
-    };
-    window.addEventListener('__flow_bridge_msg', listener);
-
-    const script = document.createElement('script');
-    script.textContent = `
-      (async function() {
-        try {
-          const res = await (async () => {
-            ${fnBody}
-          })();
-          window.dispatchEvent(new CustomEvent('__flow_bridge_msg', {
-            detail: { id: '${id}', result: res }
-          }));
-        } catch (e) {
-          window.dispatchEvent(new CustomEvent('__flow_bridge_msg', {
-            detail: { id: '${id}', result: false, error: String(e) }
-          }));
-        }
-      })();
-    `;
-    (document.head || document.documentElement).appendChild(script);
-  });
-}
-
-function triggerReactClick(el: HTMLElement): boolean {
-  const reactKeys = Object.keys(el).filter(key => 
-    key.startsWith('__reactFiber') || 
-    key.startsWith('__reactProps') || 
-    key.startsWith('__reactEventHandlers') ||
-    key.startsWith('__reactInternalInstance')
-  );
-
-  for (const key of reactKeys) {
-    try {
-      const fiber = (el as any)[key];
-      let node = fiber;
-      while (node) {
-        const props = node.memoizedProps || node.pendingProps || node.props;
-        if (props && typeof props.onClick === 'function') {
-          props.onClick({
-            target: el,
-            currentTarget: el,
-            bubbles: true,
-            cancelable: true,
-            preventDefault: () => {},
-            stopPropagation: () => {},
-            nativeEvent: new MouseEvent('click', { bubbles: true })
-          });
-          return true;
-        }
-        node = node.return || node._debugOwner;
-      }
-    } catch (_) {}
-  }
-  return false;
-}
-
-function simulateClick(element: HTMLElement) {
-  const rect = element.getBoundingClientRect();
+function clickElement(el: HTMLElement) {
+  el.focus();
+  const rect = el.getBoundingClientRect();
   const clientX = rect.left > 0 ? rect.left + rect.width / 2 : 100;
   const clientY = rect.top > 0 ? rect.top + rect.height / 2 : 100;
   const mouseOpts: MouseEventInit = {
@@ -247,17 +180,11 @@ function simulateClick(element: HTMLElement) {
     buttons: 1
   };
 
-  element.focus();
-  element.dispatchEvent(new PointerEvent('pointerdown', { ...mouseOpts, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
-  element.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
-  element.dispatchEvent(new PointerEvent('pointerup', { ...mouseOpts, buttons: 0 }));
-  element.dispatchEvent(new MouseEvent('mouseup', { ...mouseOpts, buttons: 0 }));
-  element.dispatchEvent(new MouseEvent('click', { ...mouseOpts, buttons: 0 }));
-  element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-  element.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-  
-  triggerReactClick(element);
-  element.click();
+  el.dispatchEvent(new PointerEvent('pointerdown', { ...mouseOpts, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+  el.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
+  el.dispatchEvent(new PointerEvent('pointerup', { ...mouseOpts, buttons: 0 }));
+  el.dispatchEvent(new MouseEvent('mouseup', { ...mouseOpts, buttons: 0 }));
+  el.dispatchEvent(new MouseEvent('click', { ...mouseOpts, buttons: 0 }));
 }
 
 export async function fillFieldOnPage(field: DetectedField): Promise<boolean> {
@@ -305,147 +232,105 @@ export async function fillFieldOnPage(field: DetectedField): Promise<boolean> {
                           el.closest('[data-component-name="Dropdown"]') as HTMLElement;
     
     if (reactDropdown) {
-      const candidateTargets = normalizeTargetForField(field.fieldType, finalValue);
-      const targetsJson = JSON.stringify(candidateTargets);
-      const selector = field.elementSelector;
-      const nameAttr = field.nameAttribute || '';
-
-      const scriptCode = `
-        const targetElem = document.querySelector('${selector}') || 
-                           document.querySelector('[data-component-name="Dropdown"][name="${nameAttr}"]') ||
-                           document.querySelector('[name="${nameAttr}"]') ||
-                           document.querySelector('#${nameAttr}');
-        if (!targetElem) return false;
-
-        const dropdown = targetElem.closest('.react-dropdown-select') || 
-                         targetElem.querySelector('.react-dropdown-select') || 
-                         targetElem.closest('[data-component-name="Dropdown"]')?.querySelector('.react-dropdown-select') ||
-                         targetElem.closest('[data-component-name="Dropdown"]') || targetElem;
-
-        const selectElem = dropdown.querySelector('.react-dropdown-select') || dropdown;
-        const isExpanded = selectElem.getAttribute('aria-expanded') === 'true';
-
-        if (!isExpanded) {
-          const handle = selectElem.querySelector('.react-dropdown-select-content') || 
-                         selectElem.querySelector('.react-dropdown-select-dropdown-handle') || 
-                         selectElem;
-          handle.click();
-          await new Promise(r => setTimeout(r, 200));
+      const hiddenInput = reactDropdown.querySelector('input[name]') as HTMLInputElement;
+      if (hiddenInput) {
+        const tracker = (hiddenInput as any)._valueTracker;
+        if (tracker) tracker.setValue('');
+        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+        if (nativeSetter) {
+          nativeSetter.call(hiddenInput, finalValue);
+        } else {
+          hiddenInput.value = finalValue;
         }
+        hiddenInput.dispatchEvent(new Event('input', { bubbles: true }));
+        hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
+      }
 
-        const targets = ${targetsJson};
-        const primarySearch = targets[0] || '';
+      const selectElem = (reactDropdown.querySelector('.react-dropdown-select') || reactDropdown) as HTMLElement;
+      const isExpanded = selectElem.getAttribute('aria-expanded') === 'true';
 
-        const searchInput = document.querySelector('[data-component-name="DropdownOptionsSearch"] input, input[placeholder*="Pesquis"]');
+      if (!isExpanded) {
+        const handle = (selectElem.querySelector('.react-dropdown-select-content') || 
+                        selectElem.querySelector('.react-dropdown-select-dropdown-handle') || 
+                        selectElem) as HTMLElement;
+        clickElement(handle);
+        await new Promise(r => setTimeout(r, 200));
+      }
+
+      const candidateTargets = normalizeTargetForField(field.fieldType, finalValue);
+
+      const findOptionButton = (): HTMLElement | null => {
+        const optionButtons = Array.from(
+          document.querySelectorAll('button[data-component-name="DropdownOption"], button[role="option"], [data-option-value], [role="option"]')
+        ) as HTMLElement[];
+
+        for (const btn of optionButtons) {
+          const aria = (btn.getAttribute('aria-label') || '').toLowerCase().trim();
+          const optVal = (btn.getAttribute('data-option-value') || '').toLowerCase().trim();
+          const text = (btn.textContent || '').toLowerCase().trim();
+
+          for (const target of candidateTargets) {
+            if (aria === target || (target.length >= 3 && aria.includes(target)) ||
+                optVal === target ||
+                text === target || (target.length >= 3 && text.includes(target))) {
+              return btn;
+            }
+          }
+        }
+        return null;
+      };
+
+      let buttonToClick = findOptionButton();
+
+      if (!buttonToClick) {
+        const searchInput = (reactDropdown.querySelector('input[placeholder*="Pesquis"], [data-component-name="DropdownOptionsSearch"] input') ||
+                            document.querySelector('[data-component-name="DropdownOptionsSearch"] input, input[placeholder*="Pesquis"]')) as HTMLInputElement;
+
         if (searchInput) {
           searchInput.focus();
-          const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-          if (setter) {
-            setter.call(searchInput, primarySearch);
+          const tracker = (searchInput as any)._valueTracker;
+          if (tracker) tracker.setValue('');
+          
+          const primarySearch = candidateTargets[0] || finalValue;
+          const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+          if (nativeSetter) {
+            nativeSetter.call(searchInput, primarySearch);
           } else {
             searchInput.value = primarySearch;
           }
           searchInput.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: primarySearch }));
           searchInput.dispatchEvent(new Event('input', { bubbles: true }));
           searchInput.dispatchEvent(new Event('change', { bubbles: true }));
-          await new Promise(r => setTimeout(r, 250));
-        }
-
-        function findTargetButton() {
-          const buttons = Array.from(document.querySelectorAll('button[data-component-name="DropdownOption"], button[role="option"], [data-option-value], [role="option"]'));
-          for (const btn of buttons) {
-            const aria = (btn.getAttribute('aria-label') || '').toLowerCase().trim();
-            const optVal = (btn.getAttribute('data-option-value') || '').toLowerCase().trim();
-            const text = (btn.textContent || '').toLowerCase().trim();
-
-            for (const t of targets) {
-              if (aria === t || (t.length >= 3 && aria.includes(t)) ||
-                  optVal === t ||
-                  text === t || (t.length >= 3 && text.includes(t))) {
-                return btn;
-              }
-            }
+          
+          const waitStart = Date.now();
+          while (Date.now() - waitStart < 800) {
+            await new Promise(resolve => setTimeout(resolve, 80));
+            buttonToClick = findOptionButton();
+            if (buttonToClick) break;
           }
-          return null;
         }
+      }
 
-        let optBtn = findTargetButton();
-        if (!optBtn && searchInput) {
-          await new Promise(r => setTimeout(r, 300));
-          optBtn = findTargetButton();
+      if (buttonToClick) {
+        buttonToClick.scrollIntoView({ block: 'nearest' });
+        clickElement(buttonToClick);
+
+        if (field.fieldType === 'countryOrigin') {
+          await new Promise(resolve => setTimeout(resolve, 400));
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 150));
         }
+        return true;
+      }
 
-        if (optBtn) {
-          optBtn.scrollIntoView({ block: 'nearest' });
-
-          let reactInvoked = false;
-          for (const k in optBtn) {
-            if (k.startsWith('__reactFiber') || k.startsWith('__reactProps') || k.startsWith('__reactEventHandlers') || k.startsWith('__reactInternalInstance')) {
-              let node = optBtn[k];
-              while (node) {
-                const props = node.memoizedProps || node.pendingProps || node.props;
-                if (props && typeof props.onClick === 'function') {
-                  try {
-                    props.onClick({
-                      target: optBtn,
-                      currentTarget: optBtn,
-                      bubbles: true,
-                      cancelable: true,
-                      preventDefault: () => {},
-                      stopPropagation: () => {},
-                      nativeEvent: new MouseEvent('click', { bubbles: true })
-                    });
-                    reactInvoked = true;
-                    break;
-                  } catch (e) {}
-                }
-                node = node.return || node._debugOwner;
-              }
-            }
-            if (reactInvoked) break;
-          }
-
-          const rect = optBtn.getBoundingClientRect();
-          const clientX = rect.left > 0 ? rect.left + rect.width / 2 : 100;
-          const clientY = rect.top > 0 ? rect.top + rect.height / 2 : 100;
-          const mOpts = {
-            bubbles: true,
-            cancelable: true,
-            view: window,
-            clientX,
-            clientY,
-            screenX: clientX + window.screenX,
-            screenY: clientY + window.screenY,
-            button: 0,
-            buttons: 1
-          };
-
-          optBtn.dispatchEvent(new PointerEvent('pointerdown', { ...mOpts, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
-          optBtn.dispatchEvent(new MouseEvent('mousedown', mOpts));
-          optBtn.dispatchEvent(new PointerEvent('pointerup', { ...mOpts, buttons: 0 }));
-          optBtn.dispatchEvent(new MouseEvent('mouseup', { ...mOpts, buttons: 0 }));
-          optBtn.dispatchEvent(new MouseEvent('click', { ...mOpts, buttons: 0 }));
-          optBtn.click();
-
-          if (searchInput) {
-            searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, which: 40, bubbles: true }));
-            searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-            searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-          }
-
-          return true;
-        }
-
-        return false;
-      `;
-
-      await runInPageContext(scriptCode);
-
-      if (field.fieldType === 'countryOrigin') {
-        await new Promise(resolve => setTimeout(resolve, 800));
-      } else {
+      const searchInput = document.querySelector('[data-component-name="DropdownOptionsSearch"] input, input[placeholder*="Pesquis"]') as HTMLInputElement;
+      if (searchInput) {
+        searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, which: 40, bubbles: true }));
+        searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+        searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', keyCode: 13, which: 13, bubbles: true }));
         await new Promise(resolve => setTimeout(resolve, 200));
       }
+
       return true;
     }
 
