@@ -82,14 +82,12 @@ export function fillCheckbox(el: HTMLInputElement, checked: boolean): void {
   if (currentChecked !== checked) {
     const parentLabel = el.closest('label') || el.parentElement;
     const target = (parentLabel || el) as HTMLElement;
-    simulateClick(target);
+    clickElement(target);
 
-    if ((el.checked || el.getAttribute('aria-checked') === 'true') !== checked) {
-      el.checked = checked;
-      el.setAttribute('aria-checked', String(checked));
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    }
+    el.checked = checked;
+    el.setAttribute('aria-checked', String(checked));
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 }
 

@@ -43,7 +43,7 @@ async function analyzePageForm(): Promise<FormAnalysis> {
     const val = profile[field.fieldType];
     return {
       ...field,
-      matchedValue: val !== undefined && val !== null ? val : undefined
+      matchedValue: val !== undefined && val !== null ? String(val) : undefined
     };
   });
 
