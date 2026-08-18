@@ -44,6 +44,7 @@ Você pode instalar o Flow diretamente pelo pacote disponível nas **Releases** 
   <img alt="TailwindCSS" height="60" width="60" src="https://github.com/gui-bus/TechIcons/blob/main/Dark/TailwindCSS.svg">
   <img alt="Vite" height="60" width="60" src="https://github.com/gui-bus/TechIcons/blob/main/Dark/Vite.svg">
   <img alt="Chrome" height="60" width="60" src="https://github.com/gui-bus/TechIcons/blob/main/Dark/Chrome.svg">
+  <img alt="WXT" height="60" width="60" src="https://github.com/gui-bus/TechIcons/blob/main/Dark/WXT.svg">
   <img alt="npm" height="60" width="60" src="https://github.com/gui-bus/TechIcons/blob/main/Dark/npm.svg">
   <img alt="Conventional Commits" height="60" width="60" src="https://github.com/gui-bus/TechIcons/blob/main/Dark/Conventional%20Commits.svg">
   <img alt="Github" height="60" width="60" src="https://github.com/gui-bus/TechIcons/blob/main/Dark/Github.svg">
