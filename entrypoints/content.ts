@@ -1,5 +1,5 @@
 import { getAdapterForUrl } from '../lib/adapters';
-import { fillFieldOnPage } from '../lib/fill';
+import { fillFieldOnPage, preWarmDropdowns } from '../lib/fill';
 import { getProfile } from '../lib/storage';
 import { FormAnalysis, DetectedField } from '../types/index';
 
@@ -56,6 +56,8 @@ async function analyzePageForm(): Promise<FormAnalysis> {
 async function fillFormFields(fields: DetectedField[]): Promise<{ success: boolean; filledCount: number; skippedCount: number }> {
   let filledCount = 0;
   let skippedCount = 0;
+
+  await preWarmDropdowns();
 
   const sortedFields = [...fields].sort((a, b) => {
     if (a.fieldType === 'countryOrigin') return -1;

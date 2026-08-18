@@ -174,46 +174,7 @@ function normalizeTargetForField(fieldType: string, value: string): string[] {
   return Array.from(candidates);
 }
 
-function fillDropdownViaMainWorld(field: DetectedField, finalValue: string, candidateTargets: string[]): Promise<boolean> {
-  return new Promise((resolve) => {
-    const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    let settled = false;
-
-    const timeout = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        window.removeEventListener('__FLOW_FILL_DROPDOWN_REPLY__', onReply);
-        resolve(false);
-      }
-    }, 3000);
-
-    const onReply = (e: any) => {
-      if (e.detail?.requestId === requestId) {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timeout);
-          window.removeEventListener('__FLOW_FILL_DROPDOWN_REPLY__', onReply);
-          resolve(e.detail.success === true);
-        }
-      }
-    };
-
-    window.addEventListener('__FLOW_FILL_DROPDOWN_REPLY__', onReply);
-
-    window.dispatchEvent(new CustomEvent('__FLOW_FILL_DROPDOWN__', {
-      detail: {
-        requestId,
-        fieldType: field.fieldType,
-        finalValue,
-        candidateTargets,
-        selector: field.elementSelector,
-        nameAttr: field.nameAttribute || ''
-      }
-    }));
-  });
-}
-
-function clickElement(el: HTMLElement) {
+export function clickElement(el: HTMLElement) {
   el.focus();
   const rect = el.getBoundingClientRect();
   const clientX = rect.left > 0 ? rect.left + rect.width / 2 : 100;
@@ -235,6 +196,101 @@ function clickElement(el: HTMLElement) {
   el.dispatchEvent(new PointerEvent('pointerup', { ...mouseOpts, buttons: 0 }));
   el.dispatchEvent(new MouseEvent('mouseup', { ...mouseOpts, buttons: 0 }));
   el.dispatchEvent(new MouseEvent('click', { ...mouseOpts, buttons: 0 }));
+}
+
+export async function preWarmDropdowns(): Promise<void> {
+  const countryEl = document.querySelector('[data-component-name="Dropdown"][name="country"], #country, [name="country"]') as HTMLElement;
+  if (countryEl) {
+    const handle = (countryEl.querySelector('.react-dropdown-select-content') || 
+                    countryEl.querySelector('.react-dropdown-select-dropdown-handle') || 
+                    countryEl.querySelector('.react-dropdown-select') || 
+                    countryEl) as HTMLElement;
+    
+    clickElement(handle);
+    await new Promise(r => setTimeout(r, 350));
+
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window }));
+    document.body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window }));
+    document.body.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+    await new Promise(r => setTimeout(r, 200));
+  }
+}
+
+function getSearchKeyword(fieldType: string, val: string): string {
+  let cleaned = val.replace(/\s*\(.*?\)/g, '').trim();
+  if (fieldType === 'countryOrigin' && ['brasil', 'brazil', 'br'].includes(cleaned.toLowerCase())) {
+    return 'Brasil';
+  }
+  return cleaned;
+}
+
+async function simulateSearchInput(searchInput: HTMLInputElement, searchText: string) {
+  searchInput.scrollIntoView({ block: 'nearest' });
+  searchInput.focus();
+  searchInput.dispatchEvent(new FocusEvent('focus', { bubbles: false }));
+  searchInput.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+
+  const rect = searchInput.getBoundingClientRect();
+  const clientX = rect.left > 0 ? rect.left + rect.width / 2 : 100;
+  const clientY = rect.top > 0 ? rect.top + rect.height / 2 : 100;
+  const mouseOpts: MouseEventInit = {
+    bubbles: true,
+    cancelable: true,
+    view: window,
+    clientX,
+    clientY,
+    screenX: clientX,
+    screenY: clientY,
+    button: 0,
+    buttons: 1
+  };
+
+  searchInput.dispatchEvent(new PointerEvent('pointerdown', { ...mouseOpts, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+  searchInput.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
+  searchInput.dispatchEvent(new PointerEvent('pointerup', { ...mouseOpts, buttons: 0 }));
+  searchInput.dispatchEvent(new MouseEvent('mouseup', { ...mouseOpts, buttons: 0 }));
+  searchInput.dispatchEvent(new MouseEvent('click', { ...mouseOpts, buttons: 0 }));
+
+  await new Promise(r => setTimeout(r, 100));
+
+  searchInput.select();
+  try {
+    document.execCommand('selectAll', false);
+    document.execCommand('delete', false);
+  } catch (e) {}
+
+  let execSuccess = false;
+  try {
+    execSuccess = document.execCommand('insertText', false, searchText);
+  } catch (e) {
+    execSuccess = false;
+  }
+
+  if (!execSuccess || searchInput.value !== searchText) {
+    const tracker = (searchInput as any)._valueTracker;
+    if (tracker) tracker.setValue('');
+    const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+    if (nativeSetter) {
+      nativeSetter.call(searchInput, searchText);
+    } else {
+      searchInput.value = searchText;
+    }
+    searchInput.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, data: searchText, inputType: 'insertText' }));
+    searchInput.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: searchText, inputType: 'insertText' }));
+    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    searchInput.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: searchText[0] || 'a', bubbles: true }));
+  searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: searchText[searchText.length - 1] || 'a', bubbles: true }));
+
+  searchInput.dispatchEvent(new PointerEvent('pointerdown', { ...mouseOpts, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+  searchInput.dispatchEvent(new MouseEvent('mousedown', mouseOpts));
+  searchInput.dispatchEvent(new PointerEvent('pointerup', { ...mouseOpts, buttons: 0 }));
+  searchInput.dispatchEvent(new MouseEvent('mouseup', { ...mouseOpts, buttons: 0 }));
+  searchInput.dispatchEvent(new MouseEvent('click', { ...mouseOpts, buttons: 0 }));
+
+  await new Promise(r => setTimeout(r, 200));
 }
 
 export async function fillFieldOnPage(field: DetectedField): Promise<boolean> {
@@ -296,94 +352,92 @@ export async function fillFieldOnPage(field: DetectedField): Promise<boolean> {
         hiddenInput.dispatchEvent(new Event('change', { bubbles: true }));
       }
 
-      const candidateTargets = normalizeTargetForField(field.fieldType, finalValue);
-
-      const mainWorldSuccess = await fillDropdownViaMainWorld(field, finalValue, candidateTargets);
-      if (mainWorldSuccess) {
-        if (field.fieldType === 'countryOrigin') {
-          await new Promise(resolve => setTimeout(resolve, 300));
-        }
-        return true;
-      }
-
       const selectElem = (reactDropdown.querySelector('.react-dropdown-select') || reactDropdown) as HTMLElement;
-      const isExpanded = selectElem.getAttribute('aria-expanded') === 'true';
+      const handle = (selectElem.querySelector('.react-dropdown-select-content') || 
+                      selectElem.querySelector('.react-dropdown-select-dropdown-handle') || 
+                      selectElem) as HTMLElement;
 
+      const isExpanded = selectElem.getAttribute('aria-expanded') === 'true';
       if (!isExpanded) {
-        const handle = (selectElem.querySelector('.react-dropdown-select-content') || 
-                        selectElem.querySelector('.react-dropdown-select-dropdown-handle') || 
-                        selectElem) as HTMLElement;
         clickElement(handle);
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, 150));
       }
+
+      const candidateTargets = normalizeTargetForField(field.fieldType, finalValue);
+      const primarySearch = getSearchKeyword(field.fieldType, finalValue);
+
+      const searchInput = (selectElem.querySelector('input[placeholder*="Pesquis"], [data-component-name="DropdownOptionsSearch"] input') ||
+                          document.querySelector('[data-component-name="DropdownOptionsSearch"] input')) as HTMLInputElement;
+
+      if (searchInput) {
+        await simulateSearchInput(searchInput, primarySearch);
+      }
+
+      const matchesTarget = (btn: HTMLElement, targets: string[]) => {
+        const aria = (btn.getAttribute('aria-label') || '').toLowerCase().trim();
+        const optVal = (btn.getAttribute('data-option-value') || '').toLowerCase().trim();
+        const text = (btn.textContent || '').toLowerCase().trim();
+        return targets.some(t => {
+          const tL = t.toLowerCase();
+          return aria === tL || optVal === tL || text === tL || (tL.length >= 3 && (aria.includes(tL) || text.includes(tL)));
+        });
+      };
 
       const findOptionButton = (): HTMLElement | null => {
-        const optionButtons = Array.from(
-          document.querySelectorAll('button[data-component-name="DropdownOption"], button[role="option"], [data-option-value], [role="option"]')
-        ) as HTMLElement[];
+        const scoped = Array.from(selectElem.querySelectorAll('button[data-component-name="DropdownOption"], button[role="option"], [data-option-value]')) as HTMLElement[];
+        for (const btn of scoped) {
+          if (matchesTarget(btn, candidateTargets)) return btn;
+        }
 
-        for (const btn of optionButtons) {
-          const aria = (btn.getAttribute('aria-label') || '').toLowerCase().trim();
-          const optVal = (btn.getAttribute('data-option-value') || '').toLowerCase().trim();
-          const text = (btn.textContent || '').toLowerCase().trim();
-
-          for (const target of candidateTargets) {
-            const tLower = target.toLowerCase();
-            if (aria === tLower || (tLower.length >= 3 && aria.includes(tLower)) ||
-                optVal === tLower ||
-                text === tLower || (tLower.length >= 3 && text.includes(tLower))) {
-              return btn;
-            }
+        const portals = Array.from(document.querySelectorAll('[data-component-name="DropdownOptionsList"], .react-dropdown-select-dropdown'));
+        for (const p of portals) {
+          const btns = Array.from(p.querySelectorAll('button[data-component-name="DropdownOption"], button[role="option"], [data-option-value]')) as HTMLElement[];
+          for (const btn of btns) {
+            if (matchesTarget(btn, candidateTargets)) return btn;
           }
         }
+
+        const allButtons = Array.from(document.querySelectorAll('button[data-component-name="DropdownOption"], button[role="option"]')) as HTMLElement[];
+        for (const btn of allButtons) {
+          if (matchesTarget(btn, candidateTargets)) return btn;
+        }
+
         return null;
       };
 
       let buttonToClick = findOptionButton();
-
-      if (!buttonToClick) {
-        const searchInput = (reactDropdown.querySelector('input[placeholder*="Pesquis"], [data-component-name="DropdownOptionsSearch"] input') ||
-                            document.querySelector('[data-component-name="DropdownOptionsSearch"] input, input[placeholder*="Pesquis"]')) as HTMLInputElement;
-
-        if (searchInput) {
-          searchInput.focus();
-          const tracker = (searchInput as any)._valueTracker;
-          if (tracker) tracker.setValue('');
-          
-          const primarySearch = candidateTargets[0] || finalValue;
-          const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-          if (nativeSetter) {
-            nativeSetter.call(searchInput, primarySearch);
-          } else {
-            searchInput.value = primarySearch;
-          }
-          searchInput.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: primarySearch }));
-          searchInput.dispatchEvent(new Event('input', { bubbles: true }));
-          searchInput.dispatchEvent(new Event('change', { bubbles: true }));
-          
-          const waitStart = Date.now();
-          while (Date.now() - waitStart < 600) {
-            await new Promise(resolve => setTimeout(resolve, 60));
-            buttonToClick = findOptionButton();
-            if (buttonToClick) break;
-          }
+      if (!buttonToClick && searchInput) {
+        const waitStart = Date.now();
+        while (Date.now() - waitStart < 500) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+          buttonToClick = findOptionButton();
+          if (buttonToClick) break;
         }
       }
 
       if (buttonToClick) {
         buttonToClick.scrollIntoView({ block: 'nearest' });
         clickElement(buttonToClick);
+        await new Promise(resolve => setTimeout(resolve, 150));
+      } else if (searchInput) {
+        searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, which: 40, bubbles: true }));
+        searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+        searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
 
-        if (field.fieldType === 'countryOrigin') {
-          await new Promise(resolve => setTimeout(resolve, 300));
-        }
-        return true;
+      const stillExpanded = selectElem.getAttribute('aria-expanded') === 'true';
+      if (stillExpanded) {
+        clickElement(handle);
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      if (field.fieldType === 'countryOrigin') {
+        await new Promise(resolve => setTimeout(resolve, 300));
       }
 
       return true;
-    }
-
-    if (el instanceof HTMLInputElement) {
+    } if (el instanceof HTMLInputElement) {
       const type = el.type.toLowerCase();
       if (type === 'checkbox') {
         const isTrue = finalValue === 'true' || ['yes', 'sim', 'true', '1'].includes(finalValue.toLowerCase());
