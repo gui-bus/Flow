@@ -187,7 +187,7 @@ function fillDropdownViaMainWorld(field: DetectedField, finalValue: string, cand
         window.removeEventListener('__FLOW_FILL_DROPDOWN_REPLY__', onReply);
         resolve(false);
       }
-    }, 1200);
+    }, 3000);
 
     const onReply = (e: any) => {
       if (e.detail?.requestId === requestId) {

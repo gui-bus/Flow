@@ -29,8 +29,9 @@ export default defineContentScript({
           const handle = (selectElem.querySelector('.react-dropdown-select-content') || 
                           selectElem.querySelector('.react-dropdown-select-dropdown-handle') || 
                           selectElem) as HTMLElement;
+          handle.focus();
           handle.click();
-          await new Promise(r => setTimeout(r, 150));
+          await new Promise(r => setTimeout(r, 300));
         }
 
         const findButton = (): HTMLElement | null => {
@@ -44,9 +45,10 @@ export default defineContentScript({
             const text = (btn.textContent || '').toLowerCase().trim();
 
             for (const target of candidateTargets) {
-              if (aria === target || (target.length >= 3 && aria.includes(target)) ||
-                  optVal === target ||
-                  text === target || (target.length >= 3 && text.includes(target))) {
+              const t = String(target).toLowerCase().trim();
+              if (aria === t || (t.length >= 3 && aria.includes(t)) ||
+                  optVal === t ||
+                  text === t || (t.length >= 3 && text.includes(t))) {
                 return btn;
               }
             }
@@ -62,23 +64,34 @@ export default defineContentScript({
 
           if (searchInput) {
             searchInput.focus();
-            const primarySearch = candidateTargets[0] || finalValue;
+            const cleanQuery = finalValue.replace(/\s*\(.*?\)/g, '').trim();
+            const primarySearch = cleanQuery || candidateTargets[0] || finalValue;
+
+            const tracker = (searchInput as any)._valueTracker;
+            if (tracker) tracker.setValue('');
+
             const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
             if (nativeSetter) {
               nativeSetter.call(searchInput, primarySearch);
             } else {
               searchInput.value = primarySearch;
             }
+            searchInput.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: primarySearch, inputType: 'insertText' }));
             searchInput.dispatchEvent(new Event('input', { bubbles: true }));
             searchInput.dispatchEvent(new Event('change', { bubbles: true }));
 
-            await new Promise(r => setTimeout(r, 200));
-            optBtn = findButton();
+            const waitStart = Date.now();
+            while (Date.now() - waitStart < 1200) {
+              await new Promise(r => setTimeout(r, 100));
+              optBtn = findButton();
+              if (optBtn) break;
+            }
           }
         }
 
         if (optBtn) {
           optBtn.scrollIntoView({ block: 'nearest' });
+          await new Promise(r => setTimeout(r, 100));
 
           for (const k in optBtn) {
             if (k.startsWith('__reactFiber') || k.startsWith('__reactProps') || k.startsWith('__reactEventHandlers') || k.startsWith('__reactInternalInstance')) {
@@ -104,13 +117,34 @@ export default defineContentScript({
             }
           }
 
+          const rect = optBtn.getBoundingClientRect();
+          const clientX = rect.left > 0 ? rect.left + rect.width / 2 : 100;
+          const clientY = rect.top > 0 ? rect.top + rect.height / 2 : 100;
+          const mOpts = {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+            clientX,
+            clientY,
+            button: 0,
+            buttons: 1
+          };
+
+          optBtn.dispatchEvent(new PointerEvent('pointerdown', { ...mOpts, pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+          optBtn.dispatchEvent(new MouseEvent('mousedown', mOpts));
+          optBtn.dispatchEvent(new PointerEvent('pointerup', { ...mOpts, buttons: 0 }));
+          optBtn.dispatchEvent(new MouseEvent('mouseup', { ...mOpts, buttons: 0 }));
+          optBtn.dispatchEvent(new MouseEvent('click', { ...mOpts, buttons: 0 }));
           optBtn.click();
+
+          await new Promise(r => setTimeout(r, 300));
         } else {
           const searchInput = document.querySelector('[data-component-name="DropdownOptionsSearch"] input, input[placeholder*="Pesquis"]') as HTMLInputElement;
           if (searchInput) {
             searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, which: 40, bubbles: true }));
             searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, which: 13, bubbles: true }));
             searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+            await new Promise(r => setTimeout(r, 200));
           }
         }
 
