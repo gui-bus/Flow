@@ -60,9 +60,12 @@ async function fillFormFields(fields: DetectedField[]): Promise<{ success: boole
   await preWarmDropdowns();
 
   const sortedFields = [...fields].sort((a, b) => {
-    if (a.fieldType === 'countryOrigin') return -1;
-    if (b.fieldType === 'countryOrigin') return 1;
-    return 0;
+    const getWeight = (t: string) => {
+      if (t === 'countryOrigin') return 1;
+      if (t === 'city') return 2;
+      return 3;
+    };
+    return getWeight(a.fieldType) - getWeight(b.fieldType);
   });
 
   for (const field of sortedFields) {

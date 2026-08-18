@@ -221,6 +221,10 @@ function getSearchKeyword(fieldType: string, val: string): string {
   if (fieldType === 'countryOrigin' && ['brasil', 'brazil', 'br'].includes(cleaned.toLowerCase())) {
     return 'Brasil';
   }
+  if (fieldType === 'city') {
+    const cityOnly = cleaned.split('-')[0].split('/')[0].trim();
+    return cityOnly || cleaned;
+  }
   return cleaned;
 }
 
@@ -294,7 +298,10 @@ async function simulateSearchInput(searchInput: HTMLInputElement, searchText: st
 }
 
 export async function fillFieldOnPage(field: DetectedField): Promise<boolean> {
-  const el = document.querySelector(field.elementSelector) as HTMLElement;
+  let el = document.querySelector(field.elementSelector) as HTMLElement;
+  if (field.fieldType === 'city' && (!el || !document.body.contains(el))) {
+    el = (document.querySelector('[data-component-name="Dropdown"][name="districtBr"], [data-component-name="Dropdown"][name="district"], [name="districtBr"], [name="district"], [name="city"]') || el) as HTMLElement;
+  }
   if (!el || field.matchedValue === undefined || field.matchedValue === null) return false;
 
   try {
@@ -433,7 +440,7 @@ export async function fillFieldOnPage(field: DetectedField): Promise<boolean> {
       }
 
       if (field.fieldType === 'countryOrigin') {
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
 
       return true;
