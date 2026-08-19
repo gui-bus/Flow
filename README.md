@@ -1,4 +1,4 @@
-﻿<div align="center">
+<div align="center">
   <br/>
   <br/>
   <img src="./public/logo/logo_white.svg" alt="Flow Logo" width="280" />
@@ -18,6 +18,22 @@ O **Flow** é uma extensão para Google Chrome que automatiza o preenchimento de
 A extensão foi desenvolvida com **Manifest V3**, utilizando WXT como framework de build, React 19 para as interfaces de usuário e Tailwind CSS v4 para estilização. O motor de preenchimento simula eventos nativos do browser (`input`, `change`, `blur`, `click`) para compatibilidade total com formulários controlados por frameworks SPA como React e Vue.
 
 O Flow conta com suporte nativo ao **InHire** — plataforma amplamente utilizada por empresas brasileiras — e com um adaptador genérico que funciona em formulários HTML padrão de qualquer site.
+
+---
+
+## 🎬 Demonstração
+
+<div align="center">
+  <p><b>Preenchimento automático do formulário com dois cliques</b></p>
+  <img src="./public/demo.webp" alt="Demo de preenchimento automático do Flow" width="100%" />
+</div>
+
+<br/>
+
+<div align="center">
+  <p><b>Página de configuração do perfil — onde você insere seus dados</b></p>
+  <img src="./public/demo_profile.webp" alt="Demo da página de perfil do Flow" width="100%" />
+</div>
 
 ---
 
